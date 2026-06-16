@@ -1,13 +1,21 @@
 FROM alpine:latest
 
-# ========== مشخصات سرور SSH خود را اینجا وارد کنید ==========
+# ========== مشخصات سرور SSH (بر اساس لاگ شما) ==========
 ENV SSH_HOST="7149e823-99ec-42a2-a02b-78fcc4467006.hsvc.ir"
 ENV SSH_USER="tunnel_user"
-ENV SSH_PASSWORD="YourStrongPassword123"
 ENV SSH_PORT="22"
-# ============================================================
 
-RUN apk add --no-cache openssh-client autossh sshpass bash
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACBPfYx8Ld6ZTdL/JaWpSQXPqh2usBfm+kJL5x/PoRxZowAAAKC+wUyIvsFM
+iAAAAAtzc2gtZWQyNTUxOQAAACBPfYx8Ld6ZTdL/JaWpSQXPqh2usBfm+kJL5x/PoRxZow
+AAAECTcNTcVVmkP16u4H1pfXlyNGG0TNZbrSR0m7hiuk8rrU99jHwt3plN0v8lpalJBc+q
+Ha6wF+b6QkvnH8+hHFmjAAAAFnlvdXJfZW1haWxAZXhhbXBsZS5jb20BAgMEBQYH
+-----END OPENSSH PRIVATE KEY-----
+
+# ====================================================
+
+RUN apk add --no-cache openssh-client autossh bash
 
 RUN adduser -D -s /bin/bash proxyuser
 
@@ -16,27 +24,29 @@ WORKDIR /home/proxyuser
 
 RUN mkdir -p .ssh && chmod 700 .ssh
 
-# ✅ خط زیر اصلاح شد: گزینه AllowTcpForwarding که متعلق به سرور است حذف شد
+# تنظیمات SSH کلاینت
 RUN printf "Host *\n    ServerAliveInterval 60\n" > .ssh/config
 
-# اسکریپت ورودی هوشمند
+# اسکریپت ورودی - کلید را از متغیر محیطی ساخته و تونل را برقرار می‌کند
 RUN printf '#!/bin/bash\n\
+if [ -n "$SSH_PRIVATE_KEY" ]; then\n\
+    echo "$SSH_PRIVATE_KEY" > .ssh/id_rsa\n\
+    chmod 600 .ssh/id_rsa\n\
+    KEY_OPT="-i .ssh/id_rsa"\n\
+else\n\
+    KEY_OPT=""\n\
+fi\n\
+\n\
 SOCKS_PORT="${PORT:-1080}"\n\
 echo "Starting SOCKS5 proxy on 0.0.0.0:$SOCKS_PORT"\n\
 \n\
 if [ -n "$SSH_PORT" ]; then PORT_OPT="-p $SSH_PORT"; else PORT_OPT=""; fi\n\
 \n\
-if [ -z "$SSH_PASSWORD" ]; then\n\
-    exec autossh -M 0 $PORT_OPT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -D "0.0.0.0:$SOCKS_PORT" -N "$SSH_USER@$SSH_HOST"\n\
-else\n\
-    exec sshpass -p "$SSH_PASSWORD" autossh -M 0 $PORT_OPT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -D "0.0.0.0:$SOCKS_PORT" -N "$SSH_USER@$SSH_HOST"\n\
-fi' > /home/proxyuser/entry.sh
+exec autossh -M 0 $PORT_OPT $KEY_OPT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -D "0.0.0.0:$SOCKS_PORT" -N "$SSH_USER@$SSH_HOST"\n\
+' > /home/proxyuser/entry.sh
 
 RUN chmod +x /home/proxyuser/entry.sh
 
 EXPOSE 1080
 
 ENTRYPOINT ["/home/proxyuser/entry.sh"]
-
-
-
