@@ -1,21 +1,67 @@
-# استفاده از image رسمی Ubuntu به عنوان پایه
-FROM ubuntu:latest
+###########################################
+# Official Image Alpine with OpenSSH server
+# Allow SSH connection to the container
+# Installed: openssh-server, mc, htop, zip,
+# tar, iotop, ncdu, nano, vim, bash, sudo
+# for net: ping, traceroute, telnet, host,
+# nslookup, iperf, nmap
+###########################################
 
-# به‌روزرسانی و نصب OpenSSH Server
-RUN apt-get update && apt-get install -y openssh-server
+ARG IMAGE_VERSION="alpine:3.20"
 
-# ایجاد پوشه مورد نیاز SSH
-RUN mkdir /var/run/sshd
+FROM $IMAGE_VERSION
+# Label docker image
+ARG IMAGE_VERSION
+MAINTAINER DevDotNet.Org <anton@devdotnet.org>
+LABEL maintainer="DevDotNet.Org <anton@devdotnet.org>"
+LABEL build_version="Image version:- ${IMAGE_VERSION}"
 
-# تنظیم رمز عبور برای کاربر root (رمز را به دلخواه تغییر دهید)
-RUN echo "root:your_strong_password" | chpasswd
+# Base
+# Set the locale
 
-# فعال کردن لاگین با رمز عبور و اجازه به root برای لاگین
-RUN echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config && \
-    echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US.UTF-8
 
-# پورت ۲۲ را در معرض دید قرار دهید
-EXPOSE 22
+# Password for ssh
+ENV USER_PASSWORD=123456
 
-# اجرای سرور SSH در حالت foreground
+# Copy to image
+COPY copyables /
+
+# Install
+RUN apk update \
+	&& apk add --no-cache --upgrade openssh-server \
+# Utils
+	&& apk add --no-cache --upgrade mc htop iotop ncdu tar zip nano vim bash sudo sed \
+# Net utils
+	&& apk add --no-cache --upgrade iputils paris-traceroute perl-net-telnet bind-tools iperf nmap \
+# Deleting keys
+	&& rm -rf /etc/ssh/ssh_host_dsa* /etc/ssh/ssh_host_ecdsa* /etc/ssh/ssh_host_ed25519* /etc/ssh/ssh_host_rsa* \
+# Config SSH
+	&& sed -ri "s|^#PermitRootLogin|PermitRootLogin|" /etc/ssh/sshd_config \
+	&& sed -i "s|PermitRootLogin without-password|PermitRootLogin yes|" /etc/ssh/sshd_config \
+	&& sed -i "s|PermitRootLogin prohibit-password|PermitRootLogin yes|" /etc/ssh/sshd_config \
+	&& sed -ri "s|^#?PermitRootLogin\s+.*|PermitRootLogin yes|" /etc/ssh/sshd_config \
+	&& sed -ri "s|^#PasswordAuthentication|PasswordAuthentication|" /etc/ssh/sshd_config \
+	&& sed -ri "s|^PasswordAuthentication no|PasswordAuthentication yes|" /etc/ssh/sshd_config \
+	&& sed -ri "s|UsePAM yes|#UsePAM yes|g" /etc/ssh/sshd_config \
+# Folder Data
+	&& mkdir -p /data \
+#Cleaning
+	&& rm -rf /var/lib/{apt,dpkg,cache,log}/ \
+	&& rm -rf /var/lib/apt/lists/*.lz4 \
+	&& rm -rf /var/log/* \	
+	&& rm -rf /tmp/* \
+	&& rm -rf /var/tmp/* \
+	&& rm -rf /usr/share/doc/ \
+	&& rm -rf /usr/share/man/ \	
+	&& rm -rf /var/cache/apk/* \
+	&& rm -rf $HOME/.cache \
+	&& chmod +x /entrypoint.sh
+
+# Port SSH
+EXPOSE 22/tcp
+
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/usr/sbin/sshd", "-D"]
